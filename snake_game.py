@@ -35,11 +35,13 @@ class Snake:
         self.alive = True
         self.brain = NeuralNetwork(8, 10, 4)  # Updated input size from 6 to 8
         self.frames_since_last_food = 0
+        self.total_frames_alive = 0  # Track total frames survived
         self.out_of_bounds = False
         self.growth_rate = 3  # Snake grows by 3 segments after eating food
 
     def move(self):
         if self.alive:
+            self.total_frames_alive += 1  # Increment total frames counter
             x, y = self.positions[0]
             dx, dy = self.direction
             new_head = (x + dx * CELL_SIZE, y + dy * CELL_SIZE)
@@ -177,10 +179,14 @@ class GeneticAlgorithm:
 
     def evaluate_fitness(self, snake):
         # Start each snake with a base fitness of 1000
-        fitness = 1000
+        fitness = 100
 
         # Reward for the snake's length (number of segments)
         fitness += (len(snake.positions) - 3) * 5  # Reward for eating apples
+
+        # Reward for staying alive longer
+        survival_bonus = snake.total_frames_alive  # Reward for survival time
+        fitness += survival_bonus
 
         # Penalize the snake for dying
         if not snake.alive:
