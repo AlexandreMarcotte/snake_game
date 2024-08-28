@@ -12,7 +12,7 @@ GREEN = (0, 255, 0)
 RED = (255, 0, 0)
 BLACK = (0, 0, 0)
 
-# Neural network class
+
 class NeuralNetwork:
     def __init__(self, input_size, hidden_size, output_size):
         self.weights_input_hidden = np.random.randn(input_size, hidden_size)
@@ -24,6 +24,7 @@ class NeuralNetwork:
         output = np.dot(hidden, self.weights_hidden_output)
         return np.tanh(output)
 
+
 # Snake class
 class Snake:
     def __init__(self):
@@ -31,8 +32,9 @@ class Snake:
         self.direction = (1, 0)
         self.grow = False
         self.alive = True
-        self.brain = NeuralNetwork(6, 10, 4)
+        self.brain = NeuralNetwork(8, 10, 4)  # Updated input size from 6 to 8
         self.frames_since_last_food = 0
+        self.out_of_bounds = False
 
     def move(self):
         if self.alive:
@@ -51,7 +53,10 @@ class Snake:
 
     def check_collision(self):
         head = self.positions[0]
-        if head[0] < 0 or head[0] >= SCREEN_WIDTH or head[1] < 0 or head[1] >= SCREEN_HEIGHT or head in self.positions[1:]:
+        if head[0] < 0 or head[0] >= SCREEN_WIDTH or head[1] < 0 or head[1] >= SCREEN_HEIGHT:
+            self.alive = False
+            self.out_of_bounds = True  # Track if the snake went out of bounds
+        elif head in self.positions[1:]:
             self.alive = False
 
     def grow_snake(self):
@@ -61,8 +66,23 @@ class Snake:
     def decide(self, food_position):
         head_x, head_y = self.positions[0]
         food_x, food_y = food_position
-        inputs = np.array([food_x - head_x, food_y - head_y, self.direction[0], self.direction[1],
-                           SCREEN_WIDTH - head_x, SCREEN_HEIGHT - head_y])
+
+        # Calculate distances to the boundaries
+        distance_to_left_wall = head_x
+        distance_to_right_wall = SCREEN_WIDTH - head_x
+        distance_to_top_wall = head_y
+        distance_to_bottom_wall = SCREEN_HEIGHT - head_y
+
+        inputs = np.array([
+            food_x - head_x,
+            food_y - head_y,
+            self.direction[0],
+            self.direction[1],
+            distance_to_left_wall,      # New input: distance to the left wall
+            distance_to_right_wall,     # New input: distance to the right wall
+            distance_to_top_wall,       # New input: distance to the top wall
+            distance_to_bottom_wall     # New input: distance to the bottom wall
+        ])
 
         output = self.brain.forward(inputs)
         decision = np.argmax(output)
