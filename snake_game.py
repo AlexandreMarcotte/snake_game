@@ -2,6 +2,7 @@ import pygame
 import random
 import numpy as np
 import matplotlib.pyplot as plt
+import math
 
 # Define constants
 SCREEN_WIDTH = 600
@@ -177,25 +178,33 @@ class GeneticAlgorithm:
         self.best_weights_input_hidden = []
         self.best_weights_hidden_output = []
 
-    def evaluate_fitness(self, snake):
+    def evaluate_fitness(self, snake, food_position):
         # Start each snake with a base fitness of 1000
-        fitness = 100
+        fitness = 1000
 
         # Reward for the snake's length (number of segments)
-        fitness += (len(snake.positions) - 3) * 5  # Reward for eating apples
+        fitness += (len(snake.positions) - 3) * 500  # Reward for eating apples
 
         # Reward for staying alive longer
         survival_bonus = snake.total_frames_alive  # Reward for survival time
         fitness += survival_bonus
 
+        # Calculate distance to the apple (Euclidean distance)
+        head_x, head_y = snake.positions[0]
+        food_x, food_y = food_position
+        distance_to_apple = math.sqrt((head_x - food_x) ** 2 + (head_y - food_y) ** 2)
+
+        # Add fitness points based on how close the snake is to the apple
+        if distance_to_apple > 0:  # Avoid division by zero
+            fitness += 100 / distance_to_apple  # Closer distance gives more fitness
+
         # Penalize the snake for dying
         if not snake.alive:
-            fitness -= 10  # General penalty for dying
+            fitness -= 1000  # General penalty for dying
             if snake.out_of_bounds:
                 fitness -= 20  # Extra penalty for going out of bounds
 
         # Penalize for being close to boundaries
-        head_x, head_y = snake.positions[0]
         distance_to_left_wall = head_x
         distance_to_right_wall = SCREEN_WIDTH - head_x
         distance_to_top_wall = head_y
@@ -214,8 +223,9 @@ class GeneticAlgorithm:
         # Ensure fitness is non-negative
         return max(fitness, 0)
 
-    def select(self):
-        self.snakes.sort(key=self.evaluate_fitness, reverse=True)
+    def select(self, food_position):
+        # Modify the sort function to pass the food position to evaluate_fitness
+        self.snakes.sort(key=lambda snake: self.evaluate_fitness(snake, food_position), reverse=True)
         return self.snakes[:self.population_size // 2]
 
     def crossover(self, parent1, parent2):
@@ -232,7 +242,8 @@ class GeneticAlgorithm:
         snake.brain.weights_hidden_output += mutation
 
     def create_new_generation(self, food):
-        parents = self.select()
+        # Pass the food's position to the select method
+        parents = self.select(food.position)
         next_generation = []
         for _ in range(self.population_size):
             parent1, parent2 = random.choice(parents), random.choice(parents)
@@ -287,7 +298,7 @@ if __name__ == "__main__":
 
         # Print the fitness of each snake in this generation
         for i, snake in enumerate(ga.snakes):
-            fitness = ga.evaluate_fitness(snake)
+            fitness = ga.evaluate_fitness(snake, game.food.position)  # Pass the food's position
             print(f"Snake {i + 1} Fitness: {fitness}")
 
         ga.log_best_snake_weights()  # Log best snake's weights
