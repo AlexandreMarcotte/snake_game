@@ -75,6 +75,7 @@ class Snake:
             self.set_direction((-1, 0))
         elif decision == 3 and self.direction != (-1, 0):  # Right
             self.set_direction((1, 0))
+
 class Food:
     def __init__(self):
         self.position = self.random_position()
@@ -83,11 +84,10 @@ class Food:
         return (random.randint(0, (SCREEN_WIDTH // CELL_SIZE) - 1) * CELL_SIZE,
                 random.randint(0, (SCREEN_HEIGHT // CELL_SIZE) - 1) * CELL_SIZE)
 
-    def move(self):  # Change from spawn to move (renaming is optional)
+    def spawn(self):
         self.position = self.random_position()
 
     def draw(self, screen):
-        self.move()  # Update food's position after each frame
         pygame.draw.rect(screen, RED, pygame.Rect(self.position[0], self.position[1], CELL_SIZE, CELL_SIZE))
 
 class Game:
@@ -164,7 +164,7 @@ class GeneticAlgorithm:
         mutation = np.random.randn(*snake.brain.weights_hidden_output.shape) * mutation_rate
         snake.brain.weights_hidden_output += mutation
 
-    def create_new_generation(self):
+    def create_new_generation(self, food):
         parents = self.select()
         next_generation = []
         for _ in range(self.population_size):
@@ -173,6 +173,8 @@ class GeneticAlgorithm:
             self.mutate(child)
             next_generation.append(child)
         self.snakes = next_generation
+
+        food.spawn()  # Reposition the food after creating a new generation
 
     def log_best_snake_weights(self):
         best_snake = self.snakes[0]
@@ -210,6 +212,6 @@ if __name__ == "__main__":
         print(f"Generation {generation+1}")
         game.run(ga.snakes, max_no_food_frames=200)  # Run the game, limiting frames without food
         ga.log_best_snake_weights()  # Log best snake's weights
-        ga.create_new_generation()  # Produce new generation
+        ga.create_new_generation(game.food)  # Produce new generation and reposition the food
 
     ga.plot_weight_changes()  # Plot the weight changes after all generations are done
