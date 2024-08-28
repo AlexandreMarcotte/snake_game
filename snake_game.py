@@ -1,7 +1,7 @@
 import pygame
 import random
 import numpy as np
-import math
+import matplotlib.pyplot as plt
 
 # Define constants
 SCREEN_WIDTH = 600
@@ -12,30 +12,27 @@ GREEN = (0, 255, 0)
 RED = (255, 0, 0)
 BLACK = (0, 0, 0)
 
-
 # Neural network class
 class NeuralNetwork:
     def __init__(self, input_size, hidden_size, output_size):
-        # Initialize random weights for a single-layer neural network
         self.weights_input_hidden = np.random.randn(input_size, hidden_size)
         self.weights_hidden_output = np.random.randn(hidden_size, output_size)
 
     def forward(self, inputs):
-        # Simple feed-forward neural network with sigmoid activation
         hidden = np.dot(inputs, self.weights_input_hidden)
-        hidden = np.tanh(hidden)  # activation
+        hidden = np.tanh(hidden)
         output = np.dot(hidden, self.weights_hidden_output)
-        return np.tanh(output)  # activation for output layer
-
+        return np.tanh(output)
 
 # Snake class
 class Snake:
     def __init__(self):
-        self.positions = [(100, 100), (80, 100), (60, 100)]  # Initial position
-        self.direction = (1, 0)  # Initial direction (moving right)
+        self.positions = [(100, 100), (80, 100), (60, 100)]
+        self.direction = (1, 0)
         self.grow = False
         self.alive = True
-        self.brain = NeuralNetwork(6, 10, 4)  # Neural network with 6 inputs, 10 hidden neurons, and 4 outputs
+        self.brain = NeuralNetwork(6, 10, 4)
+        self.frames_since_last_food = 0
 
     def move(self):
         if self.alive:
@@ -45,7 +42,7 @@ class Snake:
             self.positions.insert(0, new_head)
 
             if not self.grow:
-                self.positions.pop()  # Remove the tail
+                self.positions.pop()
             else:
                 self.grow = False
 
@@ -54,31 +51,21 @@ class Snake:
 
     def check_collision(self):
         head = self.positions[0]
-        # Check if the snake hits the boundaries
-        if head[0] < 0 or head[0] >= SCREEN_WIDTH or head[1] < 0 or head[1] >= SCREEN_HEIGHT:
-            self.alive = False
-        # Check if the snake collides with itself
-        if head in self.positions[1:]:
+        if head[0] < 0 or head[0] >= SCREEN_WIDTH or head[1] < 0 or head[1] >= SCREEN_HEIGHT or head in self.positions[1:]:
             self.alive = False
 
     def grow_snake(self):
         self.grow = True
+        self.frames_since_last_food = 0  # Reset frame count when snake eats food
 
     def decide(self, food_position):
-        # Use the neural network to decide the direction based on the environment
         head_x, head_y = self.positions[0]
         food_x, food_y = food_position
-        inputs = np.array([
-            food_x - head_x,
-            food_y - head_y,
-            self.direction[0],
-            self.direction[1],
-            SCREEN_WIDTH - head_x,
-            SCREEN_HEIGHT - head_y
-        ])
+        inputs = np.array([food_x - head_x, food_y - head_y, self.direction[0], self.direction[1],
+                           SCREEN_WIDTH - head_x, SCREEN_HEIGHT - head_y])
 
         output = self.brain.forward(inputs)
-        decision = np.argmax(output)  # Choose the action with the highest output value
+        decision = np.argmax(output)
 
         if decision == 0 and self.direction != (0, 1):  # Up
             self.set_direction((0, -1))
@@ -88,8 +75,6 @@ class Snake:
             self.set_direction((-1, 0))
         elif decision == 3 and self.direction != (-1, 0):  # Right
             self.set_direction((1, 0))
-
-
 class Food:
     def __init__(self):
         self.position = self.random_position()
@@ -98,12 +83,12 @@ class Food:
         return (random.randint(0, (SCREEN_WIDTH // CELL_SIZE) - 1) * CELL_SIZE,
                 random.randint(0, (SCREEN_HEIGHT // CELL_SIZE) - 1) * CELL_SIZE)
 
-    def spawn(self):
+    def move(self):  # Change from spawn to move (renaming is optional)
         self.position = self.random_position()
 
     def draw(self, screen):
+        self.move()  # Update food's position after each frame
         pygame.draw.rect(screen, RED, pygame.Rect(self.position[0], self.position[1], CELL_SIZE, CELL_SIZE))
-
 
 class Game:
     def __init__(self):
@@ -113,24 +98,35 @@ class Game:
         self.clock = pygame.time.Clock()
         self.food = Food()
 
-    def run(self, snakes):
+    def run(self, snakes, max_no_food_frames=200):
+        # Main game loop for all snakes
         while True:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     pygame.quit()
                     return
 
+            all_dead = True
+
             self.screen.fill(BLACK)
             self.food.draw(self.screen)
 
             for snake in snakes:
                 if snake.alive:
+                    all_dead = False
                     snake.decide(self.food.position)
                     snake.move()
                     snake.check_collision()
+
+                    # Check if the snake eats food
                     if snake.positions[0] == self.food.position:
                         snake.grow_snake()
                         self.food.spawn()
+
+                    # Check for no food for too long
+                    snake.frames_since_last_food += 1
+                    if snake.frames_since_last_food > max_no_food_frames:
+                        snake.alive = False
 
                     for pos in snake.positions:
                         pygame.draw.rect(self.screen, GREEN, pygame.Rect(pos[0], pos[1], CELL_SIZE, CELL_SIZE))
@@ -138,39 +134,37 @@ class Game:
             pygame.display.flip()
             self.clock.tick(10)
 
+            if all_dead:  # If all snakes are dead, end the game loop for this generation
+                break
 
 # Genetic Algorithm class
 class GeneticAlgorithm:
     def __init__(self, population_size):
         self.population_size = population_size
         self.snakes = [Snake() for _ in range(population_size)]
+        self.best_weights_input_hidden = []
+        self.best_weights_hidden_output = []
 
     def evaluate_fitness(self, snake):
-        # Fitness function: simple measure based on score and survival time
         return len(snake.positions)
 
     def select(self):
-        # Select snakes with high fitness for breeding (simple tournament selection)
         self.snakes.sort(key=self.evaluate_fitness, reverse=True)
         return self.snakes[:self.population_size // 2]
 
     def crossover(self, parent1, parent2):
-        # Crossover of neural network weights between two parents
         child = Snake()
         child.brain.weights_input_hidden = (parent1.brain.weights_input_hidden + parent2.brain.weights_input_hidden) / 2
-        child.brain.weights_hidden_output = (
-                                                        parent1.brain.weights_hidden_output + parent2.brain.weights_hidden_output) / 2
+        child.brain.weights_hidden_output = (parent1.brain.weights_hidden_output + parent2.brain.weights_hidden_output) / 2
         return child
 
     def mutate(self, snake, mutation_rate=0.01):
-        # Mutation to introduce variations in the snake's brain
         mutation = np.random.randn(*snake.brain.weights_input_hidden.shape) * mutation_rate
         snake.brain.weights_input_hidden += mutation
         mutation = np.random.randn(*snake.brain.weights_hidden_output.shape) * mutation_rate
         snake.brain.weights_hidden_output += mutation
 
     def create_new_generation(self):
-        # Select and breed new generation
         parents = self.select()
         next_generation = []
         for _ in range(self.population_size):
@@ -180,13 +174,42 @@ class GeneticAlgorithm:
             next_generation.append(child)
         self.snakes = next_generation
 
+    def log_best_snake_weights(self):
+        best_snake = self.snakes[0]
+        self.best_weights_input_hidden.append(best_snake.brain.weights_input_hidden.copy())
+        self.best_weights_hidden_output.append(best_snake.brain.weights_hidden_output.copy())
+
+    def plot_weight_changes(self):
+        num_generations = len(self.best_weights_input_hidden)
+        plt.figure(figsize=(12, 6))
+
+        plt.subplot(1, 2, 1)
+        for i in range(self.best_weights_input_hidden[0].shape[1]):
+            plt.plot([self.best_weights_input_hidden[g][:, i].mean() for g in range(num_generations)], label=f"Hidden Neuron {i+1}")
+        plt.title('Input-to-Hidden Weights Over Generations')
+        plt.xlabel('Generation')
+        plt.ylabel('Average Weight')
+        plt.legend()
+
+        plt.subplot(1, 2, 2)
+        for i in range(self.best_weights_hidden_output[0].shape[1]):
+            plt.plot([self.best_weights_hidden_output[g][:, i].mean() for g in range(num_generations)], label=f"Output Neuron {i+1}")
+        plt.title('Hidden-to-Output Weights Over Generations')
+        plt.xlabel('Generation')
+        plt.ylabel('Average Weight')
+        plt.legend()
+
+        plt.tight_layout()
+        plt.show()
 
 if __name__ == "__main__":
     ga = GeneticAlgorithm(population_size=10)
     game = Game()
 
-    # Run the game for multiple generations
-    for generation in range(100):  # 100 generations
-        print(f"Generation {generation + 1}")
-        game.run(ga.snakes)
-        ga.create_new_generation()
+    for generation in range(100):
+        print(f"Generation {generation+1}")
+        game.run(ga.snakes, max_no_food_frames=200)  # Run the game, limiting frames without food
+        ga.log_best_snake_weights()  # Log best snake's weights
+        ga.create_new_generation()  # Produce new generation
+
+    ga.plot_weight_changes()  # Plot the weight changes after all generations are done
