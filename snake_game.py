@@ -122,6 +122,7 @@ class Food:
 
 
 # Game class
+# Game class
 class Game:
     def __init__(self):
         pygame.init()
@@ -129,6 +130,14 @@ class Game:
         pygame.display.set_caption("Snake Game with Genetic Algorithm")
         self.clock = pygame.time.Clock()
         self.food = Food()
+        self.fence_thickness = 10  # Thickness of the fence
+
+    def draw_fence(self):
+        # Draw the fence as a white rectangle around the edges of the screen
+        pygame.draw.rect(self.screen, WHITE, pygame.Rect(0, 0, SCREEN_WIDTH, self.fence_thickness))  # Top fence
+        pygame.draw.rect(self.screen, WHITE, pygame.Rect(0, SCREEN_HEIGHT - self.fence_thickness, SCREEN_WIDTH, self.fence_thickness))  # Bottom fence
+        pygame.draw.rect(self.screen, WHITE, pygame.Rect(0, 0, self.fence_thickness, SCREEN_HEIGHT))  # Left fence
+        pygame.draw.rect(self.screen, WHITE, pygame.Rect(SCREEN_WIDTH - self.fence_thickness, 0, self.fence_thickness, SCREEN_HEIGHT))  # Right fence
 
     def run(self, snakes, max_no_food_frames=200):
         # Main game loop for all snakes
@@ -141,6 +150,7 @@ class Game:
             all_dead = True
 
             self.screen.fill(BLACK)
+            self.draw_fence()  # Draw the fence
             self.food.draw(self.screen)
 
             for snake in snakes:
@@ -160,6 +170,7 @@ class Game:
                     if snake.frames_since_last_food > max_no_food_frames:
                         snake.alive = False
 
+                    # Draw the snake
                     for pos in snake.positions:
                         pygame.draw.rect(self.screen, GREEN, pygame.Rect(pos[0], pos[1], CELL_SIZE, CELL_SIZE))
 
