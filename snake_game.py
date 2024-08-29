@@ -2,7 +2,6 @@ import pygame
 import random
 import numpy as np
 import matplotlib.pyplot as plt
-import math
 
 # Define constants
 SCREEN_WIDTH = 600
@@ -13,6 +12,9 @@ GREEN = (0, 255, 0)
 RED = (255, 0, 0)
 BLACK = (0, 0, 0)
 
+# Matrix dimensions based on screen size and cell size
+MATRIX_WIDTH = SCREEN_WIDTH // CELL_SIZE
+MATRIX_HEIGHT = SCREEN_HEIGHT // CELL_SIZE
 
 # Neural network class
 class NeuralNetwork:
@@ -26,69 +28,60 @@ class NeuralNetwork:
         output = np.dot(hidden, self.weights_hidden_output)
         return np.tanh(output)
 
-
 # Snake class
 class Snake:
     def __init__(self):
-        self.positions = [(100, 100), (80, 100), (60, 100)]
+        self.positions = [(5, 5), (4, 5), (3, 5)]
         self.direction = (1, 0)
         self.grow = False
         self.alive = True
-        self.brain = NeuralNetwork(8, 10, 4)  # Updated input size from 6 to 8
+        self.brain = NeuralNetwork(8, 10, 4)
         self.frames_since_last_food = 0
-        self.total_frames_alive = 0  # Track total frames survived
-        self.out_of_bounds = False
-        self.growth_rate = 3  # Snake grows by 3 segments after eating food
+        self.total_frames_alive = 0
 
-    def move(self):
+    def move(self, game_matrix):
         if self.alive:
-            self.total_frames_alive += 1  # Increment total frames counter
-            x, y = self.positions[0]
+            self.total_frames_alive += 1
+            head_x, head_y = self.positions[0]
             dx, dy = self.direction
-            new_head = (x + dx * CELL_SIZE, y + dy * CELL_SIZE)
+            new_head = (head_x + dx, head_y + dy)
             self.positions.insert(0, new_head)
 
             if not self.grow:
-                self.positions.pop()
+                tail = self.positions.pop()
+                game_matrix[tail[1]][tail[0]] = 0  # Remove tail from the matrix
             else:
                 self.grow = False
+
+            self.check_collision(game_matrix)
 
     def set_direction(self, direction):
         self.direction = direction
 
-    def check_collision(self):
-        head = self.positions[0]
-        if head[0] < 0 or head[0] >= SCREEN_WIDTH or head[1] < 0 or head[1] >= SCREEN_HEIGHT:
+    def check_collision(self, game_matrix):
+        head_x, head_y = self.positions[0]
+        if game_matrix[head_y][head_x] == 3 or (head_x, head_y) in self.positions[1:]:
             self.alive = False
-            self.out_of_bounds = True  # Track if the snake went out of bounds
-        elif head in self.positions[1:]:
-            self.alive = False
+        else:
+            game_matrix[head_y][head_x] = 1  # Update matrix with snake head
 
     def grow_snake(self):
-        # When the snake eats the apple, grow by multiple segments
-        for _ in range(self.growth_rate):
-            self.positions.append(self.positions[-1])  # Add extra segments to the tail
+        self.grow = True
         self.frames_since_last_food = 0
 
     def decide(self, food_position):
         head_x, head_y = self.positions[0]
         food_x, food_y = food_position
 
-        # Calculate distances to the boundaries
-        distance_to_left_wall = head_x
-        distance_to_right_wall = SCREEN_WIDTH - head_x
-        distance_to_top_wall = head_y
-        distance_to_bottom_wall = SCREEN_HEIGHT - head_y
-
         inputs = np.array([
             food_x - head_x,
             food_y - head_y,
             self.direction[0],
             self.direction[1],
-            distance_to_left_wall,  # New input: distance to the left wall
-            distance_to_right_wall,  # New input: distance to the right wall
-            distance_to_top_wall,  # New input: distance to the top wall
-            distance_to_bottom_wall  # New input: distance to the bottom wall
+            head_x,  # Distance to left wall
+            MATRIX_WIDTH - head_x,  # Distance to right wall
+            head_y,  # Distance to top wall
+            MATRIX_HEIGHT - head_y  # Distance to bottom wall
         ])
 
         output = self.brain.forward(inputs)
@@ -103,44 +96,44 @@ class Snake:
         elif decision == 3 and self.direction != (-1, 0):  # Right
             self.set_direction((1, 0))
 
-
 # Food class
 class Food:
-    def __init__(self, size=CELL_SIZE):  # Set the apple size to one square (CELL_SIZE)
-        self.size = size
+    def __init__(self):
         self.position = self.random_position()
 
     def random_position(self):
-        return (random.randint(0, (SCREEN_WIDTH // CELL_SIZE) - 1) * CELL_SIZE,
-                random.randint(0, (SCREEN_HEIGHT // CELL_SIZE) - 1) * CELL_SIZE)
+        return (random.randint(1, MATRIX_WIDTH - 2), random.randint(1, MATRIX_HEIGHT - 2))
 
-    def spawn(self):
+    def spawn(self, game_matrix):
         self.position = self.random_position()
+        game_matrix[self.position[1]][self.position[0]] = 2
 
-    def draw(self, screen):
-        pygame.draw.rect(screen, RED, pygame.Rect(self.position[0], self.position[1], self.size, self.size))
-
-
-# Game class
 # Game class
 class Game:
     def __init__(self):
         pygame.init()
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-        pygame.display.set_caption("Snake Game with Genetic Algorithm")
+        pygame.display.set_caption("Snake Game with Matrix")
         self.clock = pygame.time.Clock()
         self.food = Food()
-        self.fence_thickness = 10  # Thickness of the fence
+        self.game_matrix = np.zeros((MATRIX_HEIGHT, MATRIX_WIDTH), dtype=int)
+        self.initialize_fence()
 
-    def draw_fence(self):
-        # Draw the fence as a white rectangle around the edges of the screen
-        pygame.draw.rect(self.screen, WHITE, pygame.Rect(0, 0, SCREEN_WIDTH, self.fence_thickness))  # Top fence
-        pygame.draw.rect(self.screen, WHITE, pygame.Rect(0, SCREEN_HEIGHT - self.fence_thickness, SCREEN_WIDTH, self.fence_thickness))  # Bottom fence
-        pygame.draw.rect(self.screen, WHITE, pygame.Rect(0, 0, self.fence_thickness, SCREEN_HEIGHT))  # Left fence
-        pygame.draw.rect(self.screen, WHITE, pygame.Rect(SCREEN_WIDTH - self.fence_thickness, 0, self.fence_thickness, SCREEN_HEIGHT))  # Right fence
+    def initialize_fence(self):
+        # Create the boundary (fence) in the matrix
+        self.game_matrix[0, :] = 3
+        self.game_matrix[-1, :] = 3
+        self.game_matrix[:, 0] = 3
+        self.game_matrix[:, -1] = 3
+
+    def print_matrix(self):
+        for row in self.game_matrix:
+            print(" ".join(map(str, row)))
+        print()
 
     def run(self, snakes, max_no_food_frames=200):
-        # Main game loop for all snakes
+        self.food.spawn(self.game_matrix)
+
         while True:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -150,36 +143,48 @@ class Game:
             all_dead = True
 
             self.screen.fill(BLACK)
-            self.draw_fence()  # Draw the fence
-            self.food.draw(self.screen)
 
             for snake in snakes:
                 if snake.alive:
                     all_dead = False
                     snake.decide(self.food.position)
-                    snake.move()
-                    snake.check_collision()
+                    snake.move(self.game_matrix)
 
                     # Check if the snake eats food
                     if snake.positions[0] == self.food.position:
                         snake.grow_snake()
-                        self.food.spawn()
+                        self.food.spawn(self.game_matrix)
 
                     # Check for no food for too long
                     snake.frames_since_last_food += 1
                     if snake.frames_since_last_food > max_no_food_frames:
                         snake.alive = False
 
-                    # Draw the snake
-                    for pos in snake.positions:
-                        pygame.draw.rect(self.screen, GREEN, pygame.Rect(pos[0], pos[1], CELL_SIZE, CELL_SIZE))
+            self.draw_matrix()
 
             pygame.display.flip()
             self.clock.tick(10)
 
-            if all_dead:  # If all snakes are dead, end the game loop for this generation
+            self.print_matrix()  # Print the matrix at each step
+
+            if all_dead:
                 break
 
+    def draw_matrix(self):
+        for y in range(MATRIX_HEIGHT):
+            for x in range(MATRIX_WIDTH):
+                if self.game_matrix[y][x] == 1:
+                    color = GREEN
+                elif self.game_matrix[y][x] == 2:
+                    color = RED
+                elif self.game_matrix[y][x] == 3:
+                    color = WHITE
+                else:
+                    continue  # Skip drawing for 0 (background)
+                pygame.draw.rect(self.screen, color, pygame.Rect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE))
+
+import numpy as np
+import random
 
 # Genetic Algorithm class
 class GeneticAlgorithm:
@@ -203,7 +208,7 @@ class GeneticAlgorithm:
         # Calculate distance to the apple (Euclidean distance)
         head_x, head_y = snake.positions[0]
         food_x, food_y = food_position
-        distance_to_apple = math.sqrt((head_x - food_x) ** 2 + (head_y - food_y) ** 2)
+        distance_to_apple = np.sqrt((head_x - food_x) ** 2 + (head_y - food_y) ** 2)
 
         # Add fitness points based on how close the snake is to the apple
         if distance_to_apple > 0:  # Avoid division by zero
@@ -235,25 +240,24 @@ class GeneticAlgorithm:
         return max(fitness, 0)
 
     def select(self, food_position):
-        # Modify the sort function to pass the food position to evaluate_fitness
+        # Sort the snakes by their fitness scores
         self.snakes.sort(key=lambda snake: self.evaluate_fitness(snake, food_position), reverse=True)
         return self.snakes[:self.population_size // 2]
 
     def crossover(self, parent1, parent2):
         child = Snake()
         child.brain.weights_input_hidden = (parent1.brain.weights_input_hidden + parent2.brain.weights_input_hidden) / 2
-        child.brain.weights_hidden_output = (
-                                                        parent1.brain.weights_hidden_output + parent2.brain.weights_hidden_output) / 2
+        child.brain.weights_hidden_output = (parent1.brain.weights_hidden_output + parent2.brain.weights_hidden_output) / 2
         return child
 
-    def mutate(self, snake, mutation_rate=0.05):  # Slightly higher mutation rate for exploration
+    def mutate(self, snake, mutation_rate=0.05):
         mutation = np.random.randn(*snake.brain.weights_input_hidden.shape) * mutation_rate
         snake.brain.weights_input_hidden += mutation
         mutation = np.random.randn(*snake.brain.weights_hidden_output.shape) * mutation_rate
         snake.brain.weights_hidden_output += mutation
 
     def create_new_generation(self, food):
-        # Pass the food's position to the select method
+        # Select parents based on fitness
         parents = self.select(food.position)
         next_generation = []
         for _ in range(self.population_size):
@@ -299,20 +303,13 @@ class GeneticAlgorithm:
         plt.show()
 
 
+
+# Main execution
 if __name__ == "__main__":
-    ga = GeneticAlgorithm(population_size=10)
+    ga = GeneticAlgorithm(population_size=1)
     game = Game()
 
-    for generation in range(100):
+    for generation in range(1):
         print(f"Generation {generation + 1}")
-        game.run(ga.snakes, max_no_food_frames=200)  # Run the game, limiting frames without food
+        game.run(ga.snakes)
 
-        # Print the fitness of each snake in this generation
-        for i, snake in enumerate(ga.snakes):
-            fitness = ga.evaluate_fitness(snake, game.food.position)  # Pass the food's position
-            print(f"Snake {i + 1} Fitness: {fitness}")
-
-        ga.log_best_snake_weights()  # Log best snake's weights
-        ga.create_new_generation(game.food)  # Produce new generation and reposition the food
-
-    ga.plot_weight_changes()  # Plot the weight changes after all generations are done
