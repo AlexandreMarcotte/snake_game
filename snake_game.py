@@ -1,7 +1,6 @@
 import pygame
-import matplotlib.pyplot as plt
-import numpy as np
 import random
+import numpy as np
 
 # Define constants
 SCREEN_WIDTH = 600
@@ -33,17 +32,18 @@ class NeuralNetwork:
         exp_values = np.exp(x - np.max(x))  # Prevent overflow by subtracting max
         return exp_values / np.sum(exp_values)
 
-
 # Snake class
 class Snake:
     def __init__(self):
         self.positions = [(5, 5), (4, 5), (3, 5)]
-        self.direction = (1, 1)
+        self.direction = (1, 0)
         self.grow = False
         self.alive = True
-        self.brain = NeuralNetwork(MATRIX_HEIGHT * MATRIX_WIDTH, 10, 4)  # Update input size to the grid size
+        self.brain = NeuralNetwork(MATRIX_HEIGHT * MATRIX_WIDTH, 4, 4)
         self.frames_since_last_food = 0
         self.total_frames_alive = 0
+        self.move_counter = 0  # Add this line
+
 
     def move(self, game_matrix):
         if self.alive:
@@ -76,9 +76,14 @@ class Snake:
         self.frames_since_last_food = 0
 
     def decide(self, game_matrix):
-        inputs = game_matrix.flatten()  # Flatten the game matrix to feed into the neural network
-        output = self.brain.forward(inputs)
-        decision = np.argmax(output)
+        self.move_counter += 1
+
+        if self.move_counter % 4 == 0:  # Every 4th move
+            decision = random.choice([0, 1, 2, 3])  # Random move
+        else:
+            inputs = game_matrix.flatten()  # Flatten the game matrix to feed into the neural network
+            output = self.brain.forward(inputs)
+            decision = np.argmax(output)
 
         if decision == 0 and self.direction != (0, 1):  # Up
             self.set_direction((0, -1))
@@ -120,12 +125,17 @@ class Game:
         self.game_matrix[:, 0] = 3
         self.game_matrix[:, -1] = 3
 
+    def clear_matrix(self):
+        self.game_matrix = np.zeros((MATRIX_HEIGHT, MATRIX_WIDTH), dtype=int)
+        self.initialize_fence()
+
     def print_matrix(self):
         for row in self.game_matrix:
             print(" ".join(map(str, row)))
         print()
 
-    def run(self, snakes, max_no_food_frames=200):
+    def run(self, snake, max_no_food_frames=200, display=True, speed=10):
+        self.clear_matrix()
         self.food.spawn(self.game_matrix)
 
         while True:
@@ -134,34 +144,32 @@ class Game:
                     pygame.quit()
                     return
 
-            all_dead = True
+            if display:
+                self.screen.fill(BLACK)
 
-            self.screen.fill(BLACK)
+            if snake.alive:
+                snake.decide(self.game_matrix)
+                snake.move(self.game_matrix)
 
-            for snake in snakes:
-                if snake.alive:
-                    all_dead = False
-                    snake.decide(self.game_matrix)
-                    snake.move(self.game_matrix)
+                # Check if the snake eats food
+                if snake.positions[0] == self.food.position:
+                    snake.grow_snake()
+                    self.food.spawn(self.game_matrix)
 
-                    # Check if the snake eats food
-                    if snake.positions[0] == self.food.position:
-                        snake.grow_snake()
-                        self.food.spawn(self.game_matrix)
+                # Check for no food for too long
+                snake.frames_since_last_food += 1
+                if snake.frames_since_last_food > max_no_food_frames:
+                    snake.alive = False
 
-                    # Check for no food for too long
-                    snake.frames_since_last_food += 1
-                    if snake.frames_since_last_food > max_no_food_frames:
-                        snake.alive = False
+            if display:
+                self.draw_matrix()
+                pygame.display.flip()
+                self.clock.tick(speed)
+                self.print_matrix()  # Print the matrix at each step
+            else:
+                self.clock.tick(speed * 5)  # Increase speed when not displaying
 
-            self.draw_matrix()
-
-            pygame.display.flip()
-            self.clock.tick(10)
-
-            self.print_matrix()  # Print the matrix at each step
-
-            if all_dead:
+            if not snake.alive:
                 break
 
     def draw_matrix(self):
@@ -182,63 +190,21 @@ class GeneticAlgorithm:
     def __init__(self, population_size):
         self.population_size = population_size
         self.snakes = [Snake() for _ in range(population_size)]
-        self.best_weights_input_hidden = []
-        self.best_weights_hidden_output = []
 
-    def evaluate_fitness(self, snake, food_position):
-        # Start each snake with a base fitness of 1000
-        fitness = 1000
+    def evaluate_fitness(self, snake):
+        # Fitness function based on survival time and length
+        return snake.total_frames_alive + len(snake.positions) * 100
 
-        # Reward for the snake's length (number of segments)
-        fitness += (len(snake.positions) - 3) * 500  # Reward for eating apples
-
-        # Reward for staying alive longer
-        survival_bonus = snake.total_frames_alive  # Reward for survival time
-        fitness += survival_bonus
-
-        # Calculate distance to the apple (Euclidean distance)
-        head_x, head_y = snake.positions[0]
-        food_x, food_y = food_position
-        distance_to_apple = np.sqrt((head_x - food_x) ** 2 + (head_y - food_y) ** 2)
-
-        # Add fitness points based on how close the snake is to the apple
-        if distance_to_apple > 0:  # Avoid division by zero
-            fitness += 100 / distance_to_apple  # Closer distance gives more fitness
-
-        # Penalize the snake for dying
-        if not snake.alive:
-            fitness -= 1000  # General penalty for dying
-            if snake.out_of_bounds:
-                fitness -= 20  # Extra penalty for going out of bounds
-
-        # Penalize for being close to boundaries
-        distance_to_left_wall = head_x
-        distance_to_right_wall = SCREEN_WIDTH - head_x
-        distance_to_top_wall = head_y
-        distance_to_bottom_wall = SCREEN_HEIGHT - head_y
-
-        min_distance = 2 * CELL_SIZE  # Threshold for penalizing proximity to walls
-        if distance_to_left_wall < min_distance:
-            fitness -= 5
-        if distance_to_right_wall < min_distance:
-            fitness -= 5
-        if distance_to_top_wall < min_distance:
-            fitness -= 5
-        if distance_to_bottom_wall < min_distance:
-            fitness -= 5
-
-        # Ensure fitness is non-negative
-        return max(fitness, 0)
-
-    def select(self, food_position):
-        # Sort the snakes by their fitness scores
-        self.snakes.sort(key=lambda snake: self.evaluate_fitness(snake, food_position), reverse=True)
+    def select_best_snakes(self):
+        # Sort snakes by fitness and return the top half
+        self.snakes.sort(key=self.evaluate_fitness, reverse=True)
         return self.snakes[:self.population_size // 2]
 
     def crossover(self, parent1, parent2):
         child = Snake()
         child.brain.weights_input_hidden = (parent1.brain.weights_input_hidden + parent2.brain.weights_input_hidden) / 2
-        child.brain.weights_hidden_output = (parent1.brain.weights_hidden_output + parent2.brain.weights_hidden_output) / 2
+        child.brain.weights_hidden_output = (
+            parent1.brain.weights_hidden_output + parent2.brain.weights_hidden_output) / 2
         return child
 
     def mutate(self, snake, mutation_rate=0.05):
@@ -247,60 +213,28 @@ class GeneticAlgorithm:
         mutation = np.random.randn(*snake.brain.weights_hidden_output.shape) * mutation_rate
         snake.brain.weights_hidden_output += mutation
 
-    def create_new_generation(self, food):
-        # Select parents based on fitness
-        parents = self.select(food.position)
+    def create_new_generation(self):
+        parents = self.select_best_snakes()
         next_generation = []
-        for _ in range(self.population_size):
+        while len(next_generation) < self.population_size:
             parent1, parent2 = random.choice(parents), random.choice(parents)
             child = self.crossover(parent1, parent2)
             self.mutate(child)
             next_generation.append(child)
         self.snakes = next_generation
 
-        food.spawn()  # Reposition the food after creating a new generation
-
-    def log_best_snake_weights(self):
-        # Log the weights of the best-performing snake's brain (for tracking progress over generations)
-        best_snake = self.snakes[0]  # The best snake is the first one after sorting by fitness
-        self.best_weights_input_hidden.append(best_snake.brain.weights_input_hidden.copy())
-        self.best_weights_hidden_output.append(best_snake.brain.weights_hidden_output.copy())
-
-    def plot_weight_changes(self):
-        num_generations = len(self.best_weights_input_hidden)
-        plt.figure(figsize=(12, 6))
-
-        # Plot input-hidden layer weights
-        plt.subplot(1, 2, 1)
-        for i in range(self.best_weights_input_hidden[0].shape[1]):
-            plt.plot([self.best_weights_input_hidden[g][:, i].mean() for g in range(num_generations)],
-                     label=f"Hidden Neuron {i + 1}")
-        plt.title('Input-to-Hidden Weights Over Generations')
-        plt.xlabel('Generation')
-        plt.ylabel('Average Weight')
-        plt.legend()
-
-        # Plot hidden-output layer weights
-        plt.subplot(1, 2, 2)
-        for i in range(self.best_weights_hidden_output[0].shape[1]):
-            plt.plot([self.best_weights_hidden_output[g][:, i].mean() for g in range(num_generations)],
-                     label=f"Output Neuron {i + 1}")
-        plt.title('Hidden-to-Output Weights Over Generations')
-        plt.xlabel('Generation')
-        plt.ylabel('Average Weight')
-        plt.legend()
-
-        plt.tight_layout()
-        plt.show()
-
-
-
 # Main execution
 if __name__ == "__main__":
-    ga = GeneticAlgorithm(population_size=1)
+    population_size = 10
+    ga = GeneticAlgorithm(population_size)
     game = Game()
 
-    for generation in range(1):
+    generations = 100
+    for generation in range(generations):
         print(f"Generation {generation + 1}")
-        game.run(ga.snakes)
 
+        for snake in ga.snakes:
+            display = (generation + 1) % 10 == 0
+            game.run(snake, display=display, speed=10 if display else 50)
+
+        ga.create_new_generation()
