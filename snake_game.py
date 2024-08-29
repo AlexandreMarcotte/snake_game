@@ -1,7 +1,7 @@
 import pygame
-import random
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
+import random
 
 # Define constants
 SCREEN_WIDTH = 600
@@ -24,18 +24,24 @@ class NeuralNetwork:
 
     def forward(self, inputs):
         hidden = np.dot(inputs, self.weights_input_hidden)
-        hidden = np.tanh(hidden)
+        hidden = self.softmax(hidden)  # Apply softmax activation to hidden layer
         output = np.dot(hidden, self.weights_hidden_output)
-        return np.tanh(output)
+        return self.softmax(output)  # Apply softmax activation to output layer
+
+    @staticmethod
+    def softmax(x):
+        exp_values = np.exp(x - np.max(x))  # Prevent overflow by subtracting max
+        return exp_values / np.sum(exp_values)
+
 
 # Snake class
 class Snake:
     def __init__(self):
         self.positions = [(5, 5), (4, 5), (3, 5)]
-        self.direction = (1, 0)
+        self.direction = (1, 1)
         self.grow = False
         self.alive = True
-        self.brain = NeuralNetwork(8, 10, 4)
+        self.brain = NeuralNetwork(MATRIX_HEIGHT * MATRIX_WIDTH, 10, 4)  # Update input size to the grid size
         self.frames_since_last_food = 0
         self.total_frames_alive = 0
 
@@ -69,21 +75,8 @@ class Snake:
         self.grow = True
         self.frames_since_last_food = 0
 
-    def decide(self, food_position):
-        head_x, head_y = self.positions[0]
-        food_x, food_y = food_position
-
-        inputs = np.array([
-            food_x - head_x,
-            food_y - head_y,
-            self.direction[0],
-            self.direction[1],
-            head_x,  # Distance to left wall
-            MATRIX_WIDTH - head_x,  # Distance to right wall
-            head_y,  # Distance to top wall
-            MATRIX_HEIGHT - head_y  # Distance to bottom wall
-        ])
-
+    def decide(self, game_matrix):
+        inputs = game_matrix.flatten()  # Flatten the game matrix to feed into the neural network
         output = self.brain.forward(inputs)
         decision = np.argmax(output)
 
@@ -95,6 +88,7 @@ class Snake:
             self.set_direction((-1, 0))
         elif decision == 3 and self.direction != (-1, 0):  # Right
             self.set_direction((1, 0))
+
 
 # Food class
 class Food:
@@ -147,7 +141,7 @@ class Game:
             for snake in snakes:
                 if snake.alive:
                     all_dead = False
-                    snake.decide(self.food.position)
+                    snake.decide(self.game_matrix)
                     snake.move(self.game_matrix)
 
                     # Check if the snake eats food
@@ -182,9 +176,6 @@ class Game:
                 else:
                     continue  # Skip drawing for 0 (background)
                 pygame.draw.rect(self.screen, color, pygame.Rect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE))
-
-import numpy as np
-import random
 
 # Genetic Algorithm class
 class GeneticAlgorithm:
