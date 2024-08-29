@@ -15,22 +15,32 @@ BLACK = (0, 0, 0)
 MATRIX_WIDTH = SCREEN_WIDTH // CELL_SIZE
 MATRIX_HEIGHT = SCREEN_HEIGHT // CELL_SIZE
 
+
 # Neural network class
 class NeuralNetwork:
     def __init__(self, input_size, hidden_size, output_size):
+        # Initialize weights and biases
         self.weights_input_hidden = np.random.randn(input_size, hidden_size)
+        self.bias_hidden = np.random.randn(hidden_size)  # Bias for hidden layer
+
         self.weights_hidden_output = np.random.randn(hidden_size, output_size)
+        self.bias_output = np.random.randn(output_size)  # Bias for output layer
 
     def forward(self, inputs):
-        hidden = np.dot(inputs, self.weights_input_hidden)
+        # Calculate hidden layer activations
+        hidden = np.dot(inputs, self.weights_input_hidden) + self.bias_hidden
         hidden = self.softmax(hidden)  # Apply softmax activation to hidden layer
-        output = np.dot(hidden, self.weights_hidden_output)
+
+        # Calculate output layer activations
+        output = np.dot(hidden, self.weights_hidden_output) + self.bias_output
         return self.softmax(output)  # Apply softmax activation to output layer
 
     @staticmethod
     def softmax(x):
         exp_values = np.exp(x - np.max(x))  # Prevent overflow by subtracting max
         return exp_values / np.sum(exp_values)
+
+
 
 # Snake class
 class Snake:
@@ -39,15 +49,16 @@ class Snake:
         self.direction = (1, 0)
         self.grow = False
         self.alive = True
-        self.brain = NeuralNetwork(MATRIX_HEIGHT * MATRIX_WIDTH, 4, 4)
+        self.brain = NeuralNetwork(MATRIX_HEIGHT * MATRIX_WIDTH, 10, 4)
         self.frames_since_last_food = 0
         self.total_frames_alive = 0
-        self.move_counter = 0  # Add this line
+        self.move_counter = 0
 
 
     def move(self, game_matrix):
         if self.alive:
             self.total_frames_alive += 1
+            print(self.total_frames_alive)
             head_x, head_y = self.positions[0]
             dx, dy = self.direction
             new_head = (head_x + dx, head_y + dy)
@@ -78,7 +89,7 @@ class Snake:
     def decide(self, game_matrix):
         self.move_counter += 1
 
-        if self.move_counter % 4 == 0:  # Every 4th move
+        if self.move_counter % 10 == 0:  # Every 4th move
             decision = random.choice([0, 1, 2, 3])  # Random move
         else:
             inputs = game_matrix.flatten()  # Flatten the game matrix to feed into the neural network
@@ -106,6 +117,7 @@ class Food:
     def spawn(self, game_matrix):
         self.position = self.random_position()
         game_matrix[self.position[1]][self.position[0]] = 2
+
 
 # Game class
 class Game:
@@ -165,7 +177,6 @@ class Game:
                 self.draw_matrix()
                 pygame.display.flip()
                 self.clock.tick(speed)
-                self.print_matrix()  # Print the matrix at each step
             else:
                 self.clock.tick(speed * 5)  # Increase speed when not displaying
 
@@ -185,56 +196,109 @@ class Game:
                     continue  # Skip drawing for 0 (background)
                 pygame.draw.rect(self.screen, color, pygame.Rect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE))
 
+
 # Genetic Algorithm class
 class GeneticAlgorithm:
-    def __init__(self, population_size):
+    def __init__(self, population_size=10, mutation_rate=0.05):
         self.population_size = population_size
-        self.snakes = [Snake() for _ in range(population_size)]
+        self.mutation_rate = mutation_rate
+        self.population = [Snake() for _ in range(self.population_size)]
+        self.generation = 0
 
     def evaluate_fitness(self, snake):
         # Fitness function based on survival time and length
-        return snake.total_frames_alive + len(snake.positions) * 100
+        print(f"Total_frame_alive = {snake.total_frames_alive}")
+        return snake.total_frames_alive + len(snake.positions) * 10
 
-    def select_best_snakes(self):
-        # Sort snakes by fitness and return the top half
-        self.snakes.sort(key=self.evaluate_fitness, reverse=True)
-        return self.snakes[:self.population_size // 2]
+    def select_parents(self):
+        # Sort the population based on fitness
+        fitness_scores = [(self.evaluate_fitness(snake), snake) for snake in self.population]
+        fitness_scores.sort(reverse=True, key=lambda x: x[0])
+
+        # Select top 50% as parents
+        num_parents = self.population_size // 2
+        parents = [snake for _, snake in fitness_scores[:num_parents]]
+        return parents
 
     def crossover(self, parent1, parent2):
         child = Snake()
-        child.brain.weights_input_hidden = (parent1.brain.weights_input_hidden + parent2.brain.weights_input_hidden) / 2
-        child.brain.weights_hidden_output = (
-            parent1.brain.weights_hidden_output + parent2.brain.weights_hidden_output) / 2
+
+        # Crossover weights of input to hidden layer
+        crossover_point = np.random.randint(0, parent1.brain.weights_input_hidden.size)
+        flat_parent1 = parent1.brain.weights_input_hidden.flatten()
+        flat_parent2 = parent2.brain.weights_input_hidden.flatten()
+        new_weights_input_hidden = np.concatenate((flat_parent1[:crossover_point],
+                                                   flat_parent2[crossover_point:]))
+        child.brain.weights_input_hidden = new_weights_input_hidden.reshape(parent1.brain.weights_input_hidden.shape)
+
+        # Crossover hidden biases
+        crossover_point = np.random.randint(0, parent1.brain.bias_hidden.size)
+        new_bias_hidden = np.concatenate((parent1.brain.bias_hidden[:crossover_point],
+                                          parent2.brain.bias_hidden[crossover_point:]))
+        child.brain.bias_hidden = new_bias_hidden
+
+        # Crossover weights of hidden to output layer
+        crossover_point = np.random.randint(0, parent1.brain.weights_hidden_output.size)
+        flat_parent1 = parent1.brain.weights_hidden_output.flatten()
+        flat_parent2 = parent2.brain.weights_hidden_output.flatten()
+        new_weights_hidden_output = np.concatenate((flat_parent1[:crossover_point],
+                                                    flat_parent2[crossover_point:]))
+        child.brain.weights_hidden_output = new_weights_hidden_output.reshape(parent1.brain.weights_hidden_output.shape)
+
+        # Crossover output biases
+        crossover_point = np.random.randint(0, parent1.brain.bias_output.size)
+        new_bias_output = np.concatenate((parent1.brain.bias_output[:crossover_point],
+                                          parent2.brain.bias_output[crossover_point:]))
+        child.brain.bias_output = new_bias_output
+
         return child
 
-    def mutate(self, snake, mutation_rate=0.05):
-        mutation = np.random.randn(*snake.brain.weights_input_hidden.shape) * mutation_rate
+    def mutate(self, snake):
+        # Mutate weights and biases with a small probability
+        mutation = np.random.randn(*snake.brain.weights_input_hidden.shape) * self.mutation_rate
         snake.brain.weights_input_hidden += mutation
-        mutation = np.random.randn(*snake.brain.weights_hidden_output.shape) * mutation_rate
+
+        mutation = np.random.randn(*snake.brain.bias_hidden.shape) * self.mutation_rate
+        snake.brain.bias_hidden += mutation
+
+        mutation = np.random.randn(*snake.brain.weights_hidden_output.shape) * self.mutation_rate
         snake.brain.weights_hidden_output += mutation
 
-    def create_new_generation(self):
-        parents = self.select_best_snakes()
-        next_generation = []
-        while len(next_generation) < self.population_size:
-            parent1, parent2 = random.choice(parents), random.choice(parents)
+        mutation = np.random.randn(*snake.brain.bias_output.shape) * self.mutation_rate
+        snake.brain.bias_output += mutation
+
+    def create_new_generation(self, parents):
+        new_population = []
+
+        while len(new_population) < self.population_size:
+            parent1, parent2 = random.sample(parents, 2)
             child = self.crossover(parent1, parent2)
             self.mutate(child)
-            next_generation.append(child)
-        self.snakes = next_generation
+            new_population.append(child)
 
-# Main execution
+        self.population = new_population
+        self.generation += 1
+
+    def evolve(self, game, generations=10):
+        for _ in range(generations):
+            for snake in self.population:
+                game.run(snake)
+
+            parents = self.select_parents()
+            self.create_new_generation(parents)
+
+            best_snake = max(self.population, key=self.evaluate_fitness)
+            best_fitness = self.evaluate_fitness(best_snake)
+            print(f"Generation {self.generation} - Best Fitness: {best_fitness}")
+
+
+
+
 if __name__ == "__main__":
-    population_size = 10
-    ga = GeneticAlgorithm(population_size)
+    ga = GeneticAlgorithm(population_size=10, mutation_rate=0.05)  # Example population size and mutation rate
     game = Game()
 
-    generations = 100
-    for generation in range(generations):
-        print(f"Generation {generation + 1}")
+    print("Starting Evolution...")
+    ga.evolve(game, generations=50)  # Evolve for 50 generations
+    print("Evolution Completed.")
 
-        for snake in ga.snakes:
-            display = (generation + 1) % 10 == 0
-            game.run(snake, display=display, speed=10 if display else 50)
-
-        ga.create_new_generation()
