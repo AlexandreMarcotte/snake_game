@@ -199,7 +199,7 @@ class Game:
 
 # Genetic Algorithm class
 class GeneticAlgorithm:
-    def __init__(self, population_size=10, mutation_rate=0.05):
+    def __init__(self, population_size=12, mutation_rate=0.05):
         self.population_size = population_size
         self.mutation_rate = mutation_rate
         self.population = [Snake() for _ in range(self.population_size)]
@@ -208,7 +208,7 @@ class GeneticAlgorithm:
     def evaluate_fitness(self, snake):
         # Fitness function based on survival time and length
         print(f"Total_frame_alive = {snake.total_frames_alive}")
-        return snake.total_frames_alive + len(snake.positions) * 10
+        return snake.total_frames_alive + 11 # len(snake.positions) * 10
 
     def select_parents(self):
         # Sort the population based on fitness
@@ -288,6 +288,9 @@ class GeneticAlgorithm:
             self.create_new_generation(parents)
 
             best_snake = max(self.population, key=self.evaluate_fitness)
+            print(f"self.evaluate_fitness: {self.evaluate_fitness}")
+            for snake in self.population:
+                print("here", snake.total_frames_alive)
             best_fitness = self.evaluate_fitness(best_snake)
             print(f"Generation {self.generation} - Best Fitness: {best_fitness}")
 
@@ -299,6 +302,6 @@ if __name__ == "__main__":
     game = Game()
 
     print("Starting Evolution...")
-    ga.evolve(game, generations=50)  # Evolve for 50 generations
+    ga.evolve(game, generations=1)  # Evolve for 50 generations
     print("Evolution Completed.")
 
